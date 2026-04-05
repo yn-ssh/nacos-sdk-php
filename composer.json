@@ -1,12 +1,12 @@
 {
-    "name": "nacos/nacos-sdk-php",
+    "name": "ssh/nacos-sdk-php",
     "description": "PHP SDK for Nacos service discovery and configuration",
     "type": "library",
     "license": "MIT",
     "authors": [
         {
-            "name": "Your Name",
-            "email": "your.email@example.com"
+            "name": "ssh",
+            "email": "694711507@qq.com"
         }
     ],
     "require": {
