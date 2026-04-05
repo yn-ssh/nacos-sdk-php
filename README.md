@@ -5,7 +5,7 @@ PHP SDK for Nacos service discovery and configuration management.
 ## 安装
 
 ```bash
-composer require nacos/nacos-sdk-php
+composer require ssh/nacos-sdk-php
 ```
 
 ## 功能特性
@@ -36,6 +36,12 @@ composer require nacos/nacos-sdk-php
   - 简单易用，减少样板代码
   - 支持缓存多个Feign客户端
 
+- **gRPC支持（Nacos 2.x/3.x）**
+  - 支持 Nacos 9848 端口的 gRPC 服务
+  - 自动检测 gRPC 服务可用性
+  - 优先使用 gRPC，HTTP 作为后备方案
+  - 支持配置管理和服务发现的所有功能
+
 ## 使用方法
 
 ### 初始化客户端
@@ -49,6 +55,7 @@ $nacos = new Nacos(
     'public',                 // 命名空间ID，默认为'public'
     '',                       // Access Key（可选）
     '',                       // Secret Key（可选）
+    9848,                     // gRPC端口（可选，默认9848）
     null                      // 日志接口（可选，实现Psr\Log\LoggerInterface）
 );
 ```
@@ -396,6 +403,79 @@ $result = $userClient->get('/api/users', ['page' => 1]);
 
 FeignClient方式更加简洁，不需要每次都指定服务名，代码更易读。
 
+### gRPC功能使用
+
+SDK 支持 Nacos 9848 端口的 gRPC 服务，可以通过 gRPC 协议与 Nacos 服务器通信，获得更好的性能。
+
+#### 1. 使用 gRPC 客户端
+
+```php
+// 获取 gRPC 客户端
+$grpcClient = $nacos->grpc();
+
+// 检查 gRPC 服务是否可用
+if ($grpcClient->isAvailable()) {
+    echo "gRPC 服务可用！\n";
+} else {
+    echo "gRPC 服务不可用，将使用 HTTP 协议\n";
+}
+```
+
+#### 2. 使用 gRPC 进行配置管理
+
+```php
+// 发布配置（通过 gRPC）
+$result = $nacos->config()->publishConfig(
+    'test-config',
+    'DEFAULT_GROUP',
+    'Hello Nacos gRPC!'
+);
+
+// 获取配置（通过 gRPC）
+$content = $nacos->config()->getConfig(
+    'test-config',
+    'DEFAULT_GROUP'
+);
+
+// 删除配置（通过 gRPC）
+$result = $nacos->config()->deleteConfig(
+    'test-config',
+    'DEFAULT_GROUP'
+);
+```
+
+#### 3. 使用 gRPC 进行服务发现
+
+```php
+// 注册服务实例（通过 gRPC）
+$result = $nacos->discovery()->registerInstance(
+    'user-service',
+    '127.0.0.1',
+    8080,
+    'DEFAULT_GROUP',
+    ['version' => '1.0.0'],
+    10,
+    true
+);
+
+// 获取服务实例（通过 gRPC）
+$instances = $nacos->discovery()->getAllInstances(
+    'user-service',
+    'DEFAULT_GROUP',
+    true
+);
+
+// 注销服务实例（通过 gRPC）
+$result = $nacos->discovery()->deregisterInstance(
+    'user-service',
+    '127.0.0.1',
+    8080,
+    'DEFAULT_GROUP'
+);
+```
+
+**注意**：SDK 会自动检测 gRPC 服务可用性。如果 gRPC 服务不可用，会自动回退到 HTTP 协议，确保功能正常。
+
 ## 测试
 
 SDK提供了完整的测试脚本：
@@ -418,12 +498,25 @@ php test-config-listener.php
 
 这个脚本会演示如何监听配置变更。
 
+### gRPC 功能测试
+
+```bash
+php test-grpc.php
+```
+
+这个脚本会测试 gRPC 客户端功能，包括：
+- gRPC 服务可用性检测
+- 配置管理（发布、获取、删除）
+- 服务发现（注册、获取实例、注销）
+
 ## 系统要求
 
 - PHP >= 7.2
 - GuzzleHTTP >= 7.0
 - PSR-Log >= 1.1
 - Symfony OptionsResolver >= 5.0
+- gRPC扩展（可选，用于使用gRPC协议）
+- Protobuf扩展（可选，用于使用gRPC协议）
 
 ## 启动Nacos服务器
 
@@ -448,7 +541,8 @@ php test-config-listener.php
 nacos-sdk/
 ├── src/
 │   ├── Client/
-│   │   └── NacosClient.php       # 核心HTTP客户端
+│   │   ├── NacosClient.php       # 核心HTTP客户端
+│   │   └── NacosGrpcClient.php   # gRPC客户端
 │   ├── Config/
 │   │   └── ConfigClient.php      # 配置管理客户端
 │   ├── Discovery/
@@ -461,10 +555,12 @@ nacos-sdk/
 │   └── Nacos.php                 # 主入口类
 ├── composer.json                 # Composer配置
 ├── README.md                     # 使用说明
+├── nacos_grpc_service.proto     # gRPC服务定义
 ├── test-step-by-step.php         # 分步测试脚本
 ├── test-service-invoker.php       # 服务调用测试脚本
 ├── test-feign.php                # Feign客户端测试脚本
-└── test-config-listener.php      # 配置监听测试脚本
+├── test-config-listener.php      # 配置监听测试脚本
+└── test-grpc.php                 # gRPC功能测试脚本
 ```
 
 ## 许可证
