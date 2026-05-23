@@ -307,7 +307,9 @@ class NacosClient
             if (isset($result['code'])) {
                 // Nacos v1 API: code !== 200 表示错误
                 // Nacos v2 API: code !== 0 表示错误
-                if (($result['code'] !== 200 && $result['code'] !== 0) && $result['code'] !== null) {
+                // 心跳接口返回 code=10200 表示成功
+                $isSuccess = $result['code'] === 200 || $result['code'] === 0 || $result['code'] === 10200 || $result['code'] === null;
+                if (!$isSuccess) {
                     throw new NacosException($result['message'] ?? 'Request failed', $result['code'] ?? 500);
                 }
             }
