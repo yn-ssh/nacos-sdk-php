@@ -43,7 +43,7 @@ class ConfigClient
             // Nacos 3.x API路径
             switch ($api) {
                 case 'configs':
-                    return '/nacos/v2/cs/config';
+                    return '/nacos/v1/cs/configs';
                 case 'listener':
                     return '/nacos/v1/cs/configs/listener';
                 default:
@@ -53,11 +53,11 @@ class ConfigClient
             // Nacos 2.x API路径
             switch ($api) {
                 case 'configs':
-                    return '/nacos/v2/cs/config';
+                    return '/nacos/v1/cs/configs';
                 case 'listener':
                     return '/nacos/v1/cs/configs/listener';
                 default:
-                    return '/nacos/v2/cs/' . $api;
+                    return '/nacos/v1/cs/' . $api;
             }
         }
     }

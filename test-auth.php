@@ -28,6 +28,7 @@ try {
         'nacos'   // secretKey
     );
     echo "   ✓ 成功连接（带鉴权）\n\n";
+    echo "   服务器版本: " . $nacosWithAuth->getClient()->getServerVersion() . "\n\n";
 } catch (Exception $e) {
     echo "   ⚠ 鉴权连接失败（可能服务器未启用鉴权）: " . $e->getMessage() . "\n\n";
 }

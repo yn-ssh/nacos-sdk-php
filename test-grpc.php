@@ -8,8 +8,8 @@ use Nacos\Nacos;
 $nacos = new Nacos(
     'http://localhost:8848', // Nacos服务器地址
     'public', // 命名空间ID
-    '', // 访问密钥
-    '' // 密钥
+    'nacos', // 访问密钥
+    'nacos' // 密钥
 );
 
 // 测试gRPC客户端

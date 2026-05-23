@@ -79,13 +79,35 @@ class NacosGrpcClient
      */
     public function isGrpcAvailable(): bool
     {
+        // 检查 gRPC 扩展是否安装
+        if (!extension_loaded('grpc')) {
+            $this->logger->info('gRPC extension is not installed');
+            return false;
+        }
+        
+        // 检查 protobuf 扩展是否安装
+        if (!extension_loaded('protobuf')) {
+            $this->logger->info('Protobuf extension is not installed');
+            return false;
+        }
+        
         try {
             $address = $this->getGrpcServerAddress();
+            $host = parse_url($address, PHP_URL_HOST) ?: 'localhost';
+            $port = parse_url($address, PHP_URL_PORT) ?: 9848;
+            
             $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
             socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => 2, 'usec' => 0]);
-            $result = socket_connect($socket, parse_url($address, PHP_URL_HOST), parse_url($address, PHP_URL_PORT));
+            $result = socket_connect($socket, $host, $port);
             socket_close($socket);
-            return $result;
+            
+            if (!$result) {
+                $this->logger->info('gRPC port is not reachable', ['address' => $address]);
+                return false;
+            }
+            
+            $this->logger->info('gRPC service is available', ['address' => $address]);
+            return true;
         } catch (\Exception $e) {
             $this->logger->warning('gRPC service is not available', ['exception' => $e->getMessage()]);
             return false;

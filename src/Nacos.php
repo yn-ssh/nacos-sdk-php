@@ -50,6 +50,8 @@ class Nacos
      * @param string $secretKey
      * @param int $grpcPort
      * @param LoggerInterface|null $logger
+     * @param string $username
+     * @param string $password
      */
     public function __construct(
         string $serverUrl,
@@ -57,9 +59,19 @@ class Nacos
         string $accessKey = '',
         string $secretKey = '',
         int $grpcPort = 9848,
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        string $username = '',
+        string $password = ''
     ) {
-        $this->client = new NacosClient($serverUrl, $namespaceId, $accessKey, $secretKey, $logger);
+        $this->client = new NacosClient(
+            $serverUrl, 
+            $namespaceId, 
+            $accessKey, 
+            $secretKey, 
+            $logger,
+            $username,
+            $password
+        );
         $this->grpcClient = new NacosGrpcClient($serverUrl, $grpcPort, $namespaceId, $accessKey, $secretKey, $logger);
         $this->configClient = new ConfigClient($this->client, $this->grpcClient);
         $this->discoveryClient = new DiscoveryClient($this->client, $this->grpcClient);

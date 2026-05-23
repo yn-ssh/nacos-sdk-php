@@ -38,6 +38,26 @@ class NacosClient
     /**
      * @var string
      */
+    private $username;
+
+    /**
+     * @var string
+     */
+    private $password;
+
+    /**
+     * @var string
+     */
+    private $accessToken;
+
+    /**
+     * @var int
+     */
+    private $tokenExpireTime;
+
+    /**
+     * @var string
+     */
     private $serverVersion;
 
     /**
@@ -52,19 +72,27 @@ class NacosClient
      * @param string $accessKey
      * @param string $secretKey
      * @param LoggerInterface|null $logger
+     * @param string $username
+     * @param string $password
      */
     public function __construct(
         string $serverUrl,
         string $namespaceId = 'public',
         string $accessKey = '',
         string $secretKey = '',
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        string $username = '',
+        string $password = ''
     ) {
         $this->serverUrl = rtrim($serverUrl, '/');
         $this->namespaceId = $namespaceId;
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
+        $this->username = $username;
+        $this->password = $password;
         $this->logger = $logger ?? new NullLogger();
+        $this->accessToken = '';
+        $this->tokenExpireTime = 0;
 
         $this->httpClient = new GuzzleClient([
             'base_uri' => $this->serverUrl,
@@ -76,6 +104,11 @@ class NacosClient
 
         // 检测Nacos服务器版本
         $this->detectServerVersion();
+        
+        // 如果提供了用户名密码，先登录获取 token
+        if (!empty($this->username) && !empty($this->password)) {
+            $this->login();
+        }
     }
 
     /**
@@ -102,6 +135,58 @@ class NacosClient
     }
 
     /**
+     * 登录获取 access token
+     * @return bool
+     */
+    private function login(): bool
+    {
+        if (empty($this->username) || empty($this->password)) {
+            return false;
+        }
+
+        try {
+            $response = $this->httpClient->post('/nacos/v1/auth/login', [
+                'form_params' => [
+                    'username' => $this->username,
+                    'password' => $this->password,
+                ],
+            ]);
+            
+            $body = $response->getBody()->getContents();
+            $result = json_decode($body, true);
+            
+            if (isset($result['accessToken']) && !empty($result['accessToken'])) {
+                $this->accessToken = $result['accessToken'];
+                $tokenTtl = $result['tokenTtl'] ?? 18000;
+                $this->tokenExpireTime = time() + $tokenTtl - 300;
+                $this->logger->info('Login successful, token obtained');
+                return true;
+            }
+            
+            $this->logger->warning('Login failed: no accessToken in response');
+            return false;
+        } catch (\Exception $e) {
+            $this->logger->error('Login failed', ['exception' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
+     * 检查 token 是否需要刷新
+     * @return void
+     */
+    private function refreshTokenIfNeeded(): void
+    {
+        if (empty($this->username) || empty($this->password)) {
+            return;
+        }
+
+        if (empty($this->accessToken) || time() >= $this->tokenExpireTime) {
+            $this->login();
+        }
+    }
+
+    /**
      * 生成鉴权签名
      * @param string $method
      * @param string $path
@@ -117,13 +202,11 @@ class NacosClient
         $timestamp = time() * 1000;
         $nonce = uniqid();
         
-        // 构建签名字符串
         $signatureString = strtoupper($method) . '\n'
             . $nonce . '\n'
             . $timestamp . '\n'
             . $path . '\n';
         
-        // 生成签名
         $signature = hash_hmac('sha1', $signatureString, $this->secretKey, true);
         $signature = base64_encode($signature);
         
@@ -189,12 +272,19 @@ class NacosClient
     private function request(string $method, string $path, array $params = [])
     {
         try {
+            $this->refreshTokenIfNeeded();
+            
             $options = [];
             
-            // 添加鉴权头
+            // 添加鉴权头（AK/SK 方式）
             $authHeaders = $this->generateAuthHeaders($method, $path, $params);
             if (!empty($authHeaders)) {
                 $options['headers'] = $authHeaders;
+            }
+            
+            // 如果有 accessToken，添加到参数中
+            if (!empty($this->accessToken)) {
+                $params['accessToken'] = $this->accessToken;
             }
             
             if ($method === 'GET') {
@@ -270,6 +360,22 @@ class NacosClient
     public function getSecretKey(): string
     {
         return $this->secretKey;
+    }
+
+    /**
+     * @return string
+     */
+    public function getUsername(): string
+    {
+        return $this->username;
+    }
+
+    /**
+     * @return string
+     */
+    public function getAccessToken(): string
+    {
+        return $this->accessToken;
     }
 
     /**
