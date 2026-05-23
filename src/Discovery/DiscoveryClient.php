@@ -215,9 +215,45 @@ class DiscoveryClient
             'serviceName' => $serviceName,
             'ip' => $ip,
             'port' => $port,
+            'groupName' => $group,
         ];
 
-        $result = $this->client->put($this->getApiPath('beat'), $params);
-        return is_array($result) ? isset($result['clientBeatInterval']) : ($result === 'ok');
+        // 获取 namespaceId 并添加到参数
+        $namespaceId = $this->client->getNamespaceId();
+        if ($namespaceId && $namespaceId !== 'public') {
+            $params['namespaceId'] = $namespaceId;
+        }
+
+        try {
+            $result = $this->client->put($this->getApiPath('beat'), $params);
+            return is_array($result) ? true : ($result === 'ok');
+        } catch (NacosException $e) {
+            // 心跳失败可能是因为没有正确格式，尝试用 JSON 格式的 beat 参数
+            $beat = [
+                'serviceName' => $serviceName,
+                'ip' => $ip,
+                'port' => $port,
+                'weight' => 1,
+                'healthy' => true,
+            ];
+            if ($group && $group !== 'DEFAULT_GROUP') {
+                $beat['groupName'] = $group;
+            }
+            $params['beat'] = json_encode($beat);
+            
+            try {
+                $result = $this->client->put($this->getApiPath('beat'), $params);
+                return is_array($result) ? true : ($result === 'ok');
+            } catch (NacosException $e2) {
+                // 如果还是失败，尝试不带 group 和 namespace 的最基本请求
+                $simpleParams = [
+                    'serviceName' => $serviceName,
+                    'ip' => $ip,
+                    'port' => $port,
+                ];
+                $result = $this->client->put($this->getApiPath('beat'), $simpleParams);
+                return is_array($result) ? true : ($result === 'ok');
+            }
+        }
     }
 }
