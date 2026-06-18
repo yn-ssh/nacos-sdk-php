@@ -72,7 +72,7 @@ class Nacos
             $username,
             $password
         );
-        $this->grpcClient = new NacosGrpcClient($serverUrl, $grpcPort, $namespaceId, $accessKey, $secretKey, $logger);
+        $this->grpcClient = new NacosGrpcClient($serverUrl, $grpcPort, $namespaceId, $accessKey, $secretKey, $logger, $this->client);
         $this->configClient = new ConfigClient($this->client, $this->grpcClient);
         $this->discoveryClient = new DiscoveryClient($this->client, $this->grpcClient);
         $this->serviceInvoker = new ServiceInvoker($this->discoveryClient, $logger);

@@ -187,6 +187,16 @@ class NacosClient
     }
 
     /**
+     * 确保accessToken有效（供gRPC客户端调用）
+     * 如果token已过期或即将过期，自动刷新
+     * @return void
+     */
+    public function ensureTokenValid(): void
+    {
+        $this->refreshTokenIfNeeded();
+    }
+
+    /**
      * 生成鉴权签名
      * @param string $method
      * @param string $path
@@ -227,6 +237,19 @@ class NacosClient
     public function get(string $path, array $params = [])
     {
         return $this->request('GET', $path, $params);
+    }
+
+    /**
+     * 获取原始响应体（不进行JSON解析）
+     * 用于getConfig等返回纯文本/JSON配置内容的场景
+     * @param string $path
+     * @param array $params
+     * @return string
+     * @throws NacosException
+     */
+    public function getRaw(string $path, array $params = []): string
+    {
+        return $this->requestRaw('GET', $path, $params);
     }
 
     /**
@@ -282,9 +305,12 @@ class NacosClient
                 $options['headers'] = $authHeaders;
             }
             
-            // 如果有 accessToken，添加到参数中
+            // 如果有 accessToken，通过 Header 传递（Nacos 不从 form_params 中读 token）
             if (!empty($this->accessToken)) {
-                $params['accessToken'] = $this->accessToken;
+                if (!isset($options['headers'])) {
+                    $options['headers'] = [];
+                }
+                $options['headers']['accessToken'] = $this->accessToken;
             }
             
             if ($method === 'GET') {
@@ -325,6 +351,70 @@ class NacosClient
     }
 
     /**
+     * 发送请求并返回原始响应体（不进行JSON解析）
+     * 用于getConfig等场景，配置内容本身可能是JSON字符串，不应被解析为数组
+     * @param string $method
+     * @param string $path
+     * @param array $params
+     * @return string
+     * @throws NacosException
+     */
+    private function requestRaw(string $method, string $path, array $params = []): string
+    {
+        try {
+            $this->refreshTokenIfNeeded();
+            
+            $options = [];
+            
+            // 添加鉴权头（AK/SK 方式）
+            $authHeaders = $this->generateAuthHeaders($method, $path, $params);
+            if (!empty($authHeaders)) {
+                $options['headers'] = $authHeaders;
+            }
+            
+            // 如果有 accessToken，通过 Header 传递
+            if (!empty($this->accessToken)) {
+                if (!isset($options['headers'])) {
+                    $options['headers'] = [];
+                }
+                $options['headers']['accessToken'] = $this->accessToken;
+            }
+            
+            if ($method === 'GET') {
+                $options['query'] = $params;
+            } else {
+                $options['form_params'] = $params;
+            }
+
+            $response = $this->httpClient->request($method, $path, $options);
+            $body = $response->getBody()->getContents();
+            
+            // 检查是否是Nacos v2 API的JSON错误响应
+            $result = json_decode($body, true);
+            if (json_last_error() === JSON_ERROR_NONE && isset($result['code'])) {
+                $isSuccess = $result['code'] === 200 || $result['code'] === 0 || $result['code'] === 10200 || $result['code'] === null;
+                if (!$isSuccess) {
+                    throw new NacosException($result['message'] ?? 'Request failed', $result['code'] ?? 500);
+                }
+                // Nacos v2 API成功响应，返回data字段内容
+                if (isset($result['data'])) {
+                    return is_string($result['data']) ? $result['data'] : json_encode($result['data']);
+                }
+            }
+            
+            return $body;
+        } catch (GuzzleException $e) {
+            $this->logger->error('Nacos request failed', ['exception' => $e->getMessage()]);
+            throw new NacosException('HTTP request failed: ' . $e->getMessage(), 500);
+        } catch (NacosException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            $this->logger->error('Nacos request failed', ['exception' => $e->getMessage()]);
+            throw new NacosException($e->getMessage(), 500);
+        }
+    }
+
+    /**
      * @return string
      */
     public function getServerVersion(): string
@@ -346,6 +436,16 @@ class NacosClient
     public function getNamespaceId(): string
     {
         return $this->namespaceId;
+    }
+
+    /**
+     * 获取用于API请求的namespaceId
+     * Nacos中public命名空间的实际ID为空字符串
+     * @return string
+     */
+    public function getNamespaceIdForApi(): string
+    {
+        return $this->namespaceId === 'public' ? '' : $this->namespaceId;
     }
 
     /**

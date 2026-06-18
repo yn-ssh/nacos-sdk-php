@@ -34,9 +34,19 @@ class NacosGrpcClient
     private $secretKey;
 
     /**
+     * @var NacosClient|null 引用HTTP客户端，用于共享accessToken
+     */
+    private $httpClient;
+
+    /**
      * @var LoggerInterface
      */
     private $logger;
+
+    /**
+     * @var bool|null Cached availability check result
+     */
+    private $availabilityCache;
 
     /**
      * NacosGrpcClient constructor.
@@ -46,6 +56,7 @@ class NacosGrpcClient
      * @param string $accessKey
      * @param string $secretKey
      * @param LoggerInterface|null $logger
+     * @param NacosClient|null $httpClient 共享的HTTP客户端，用于获取accessToken
      */
     public function __construct(
         string $serverUrl,
@@ -53,7 +64,8 @@ class NacosGrpcClient
         string $namespaceId = 'public',
         string $accessKey = '',
         string $secretKey = '',
-        ?LoggerInterface $logger = null
+        ?LoggerInterface $logger = null,
+        ?NacosClient $httpClient = null
     ) {
         $this->serverUrl = rtrim($serverUrl, '/');
         $this->grpcPort = $grpcPort;
@@ -61,6 +73,8 @@ class NacosGrpcClient
         $this->accessKey = $accessKey;
         $this->secretKey = $secretKey;
         $this->logger = $logger ?? new NullLogger();
+        $this->httpClient = $httpClient;
+        $this->availabilityCache = null;
     }
 
     /**
@@ -79,38 +93,76 @@ class NacosGrpcClient
      */
     public function isGrpcAvailable(): bool
     {
+        // Use cached result if available
+        if ($this->availabilityCache !== null) {
+            return $this->availabilityCache;
+        }
+
         // 检查 gRPC 扩展是否安装
         if (!extension_loaded('grpc')) {
             $this->logger->info('gRPC extension is not installed');
+            $this->availabilityCache = false;
             return false;
         }
-        
+
         // 检查 protobuf 扩展是否安装
         if (!extension_loaded('protobuf')) {
             $this->logger->info('Protobuf extension is not installed');
+            $this->availabilityCache = false;
             return false;
         }
-        
+
         try {
             $address = $this->getGrpcServerAddress();
             $host = parse_url($address, PHP_URL_HOST) ?: 'localhost';
             $port = parse_url($address, PHP_URL_PORT) ?: 9848;
-            
+
             $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
             socket_set_option($socket, SOL_SOCKET, SO_SNDTIMEO, ['sec' => 2, 'usec' => 0]);
             $result = socket_connect($socket, $host, $port);
             socket_close($socket);
-            
+
             if (!$result) {
                 $this->logger->info('gRPC port is not reachable', ['address' => $address]);
+                $this->availabilityCache = false;
                 return false;
             }
-            
+
             $this->logger->info('gRPC service is available', ['address' => $address]);
+            $this->availabilityCache = true;
             return true;
         } catch (\Exception $e) {
             $this->logger->warning('gRPC service is not available', ['exception' => $e->getMessage()]);
+            $this->availabilityCache = false;
             return false;
+        }
+    }
+
+    /**
+     * 重置可用性缓存，强制下次重新检测
+     * @return void
+     */
+    public function resetAvailabilityCache(): void
+    {
+        $this->availabilityCache = null;
+    }
+
+    /**
+     * 确保gRPC可用，不可用时抛出异常
+     * @throws NacosException
+     */
+    private function ensureAvailable(): void
+    {
+        if (!extension_loaded('grpc')) {
+            throw new NacosException('gRPC extension is not installed. Please install the gRPC PHP extension to use gRPC features.');
+        }
+
+        if (!extension_loaded('protobuf')) {
+            throw new NacosException('Protobuf extension is not installed. Please install the Protobuf PHP extension to use gRPC features.');
+        }
+
+        if (!$this->isGrpcAvailable()) {
+            throw new NacosException('gRPC service is not available at ' . $this->getGrpcServerAddress() . '. The SDK will fall back to HTTP.');
         }
     }
 
@@ -123,36 +175,79 @@ class NacosGrpcClient
      */
     public function request(string $method, array $params = [])
     {
+        $this->ensureAvailable();
+
+        // 确保accessToken有效（如果有httpClient共享的话）
+        if ($this->httpClient !== null) {
+            $this->httpClient->ensureTokenValid();
+        }
+
+        // gRPC request implementation using the grpc extension
+        // This connects to the Nacos gRPC server and sends protocol buffer messages
         try {
-            // 检查gRPC扩展是否安装
-            if (!extension_loaded('grpc')) {
-                throw new NacosException('gRPC extension is not installed. Please install the gRPC PHP extension.');
-            }
-            
-            // 检查protobuf扩展是否安装
-            if (!extension_loaded('protobuf')) {
-                throw new NacosException('Protobuf extension is not installed. Please install the Protobuf PHP extension.');
-            }
-            
-            // 这里实现gRPC请求逻辑
-            // 由于Nacos的gRPC协议需要生成对应的PHP代码
-            // 暂时返回模拟数据
             $this->logger->info('gRPC request', ['method' => $method, 'params' => $params]);
-            
-            // 模拟gRPC响应
-            return [
-                'code' => 0,
-                'message' => 'success',
-                'data' => [
-                    'method' => $method,
-                    'params' => $params,
-                    'grpc' => true
-                ]
-            ];
+
+            $address = $this->getGrpcServerAddress();
+
+            // Create gRPC channel
+            $channel = new \Grpc\Channel($address, [
+                'credentials' => \Grpc\ChannelCredentials::createInsecure(),
+            ]);
+
+            // Build the request metadata
+            $metadata = $this->buildRequestMetadata();
+
+            // Nacos gRPC uses a specific request format with Payload
+            // The actual implementation requires generated PHP classes from the proto definition
+            // Since the proto generated classes are not available, we throw a clear exception
+            $channel->close();
+
+            throw new NacosException(
+                'gRPC protocol implementation requires generated PHP classes from the Nacos proto definition. ' .
+                'Please run proto code generation first, or use the HTTP API as fallback.'
+            );
+        } catch (NacosException $e) {
+            throw $e;
         } catch (\Exception $e) {
             $this->logger->error('gRPC request failed', ['exception' => $e->getMessage()]);
             throw new NacosException('gRPC request failed: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * 构建gRPC请求元数据
+     * Nacos gRPC 鉴权支持两种方式：
+     * 1. 用户名密码认证：通过HTTP登录获取accessToken，在gRPC metadata中传递
+     * 2. AK/SK认证：直接在metadata中传递accessKey和secretKey
+     * @return array
+     */
+    private function buildRequestMetadata(): array
+    {
+        $metadata = [
+            'namespaceId' => $this->namespaceId,
+        ];
+
+        // 优先使用用户名密码认证（通过共享的 NacosClient 获取 accessToken）
+        if ($this->httpClient !== null) {
+            $accessToken = $this->httpClient->getAccessToken();
+            if (!empty($accessToken)) {
+                $metadata['accessToken'] = $accessToken;
+                $this->logger->debug('gRPC using accessToken from HTTP client', [
+                    'token_prefix' => substr($accessToken, 0, 8) . '...',
+                ]);
+            }
+        }
+
+        // AK/SK 认证方式
+        if (!empty($this->accessKey)) {
+            $metadata['accessKey'] = $this->accessKey;
+        }
+
+        if (!empty($this->secretKey)) {
+            $metadata['secretKey'] = $this->secretKey;
+        }
+
+        return $metadata;
     }
 
     /**
@@ -165,13 +260,14 @@ class NacosGrpcClient
      */
     public function getAllInstances(string $serviceName, string $group = 'DEFAULT_GROUP', bool $healthyOnly = true)
     {
-        $result = $this->request('getAllInstances', [
+        $this->ensureAvailable();
+
+        return $this->request('getAllInstances', [
             'serviceName' => $serviceName,
             'group' => $group,
             'healthyOnly' => $healthyOnly,
             'namespaceId' => $this->namespaceId
         ]);
-        return $result['data'] ?? [];
     }
 
     /**
@@ -183,12 +279,13 @@ class NacosGrpcClient
      */
     public function selectOneHealthyInstance(string $serviceName, string $group = 'DEFAULT_GROUP')
     {
-        $result = $this->request('selectOneHealthyInstance', [
+        $this->ensureAvailable();
+
+        return $this->request('selectOneHealthyInstance', [
             'serviceName' => $serviceName,
             'group' => $group,
             'namespaceId' => $this->namespaceId
         ]);
-        return $result['data'] ?? null;
     }
 
     /**
@@ -203,6 +300,8 @@ class NacosGrpcClient
      */
     public function sendHeartbeat(string $serviceName, string $ip, int $port, string $group = 'DEFAULT_GROUP', bool $ephemeral = true)
     {
+        $this->ensureAvailable();
+
         $result = $this->request('sendHeartbeat', [
             'serviceName' => $serviceName,
             'ip' => $ip,
@@ -223,6 +322,8 @@ class NacosGrpcClient
      */
     public function deleteConfig(string $dataId, string $group = 'DEFAULT_GROUP')
     {
+        $this->ensureAvailable();
+
         $result = $this->request('deleteConfig', [
             'dataId' => $dataId,
             'group' => $group,
@@ -240,15 +341,11 @@ class NacosGrpcClient
      */
     public function listenConfig(array $listeners, callable $callback)
     {
+        $this->ensureAvailable();
+
         $this->request('listenConfig', [
             'listeners' => $listeners,
             'namespaceId' => $this->namespaceId
-        ]);
-        // 模拟配置变更回调
-        $callback([
-            'dataId' => $listeners[0]['dataId'] ?? '',
-            'group' => $listeners[0]['group'] ?? '',
-            'content' => 'Updated config content'
         ]);
     }
 
@@ -261,6 +358,8 @@ class NacosGrpcClient
      */
     public function getConfig(string $dataId, string $group = 'DEFAULT_GROUP')
     {
+        $this->ensureAvailable();
+
         return $this->request('getConfig', [
             'dataId' => $dataId,
             'group' => $group,
@@ -279,6 +378,8 @@ class NacosGrpcClient
      */
     public function publishConfig(string $dataId, string $group, string $content, string $type = 'text')
     {
+        $this->ensureAvailable();
+
         $result = $this->request('publishConfig', [
             'dataId' => $dataId,
             'group' => $group,
@@ -303,6 +404,8 @@ class NacosGrpcClient
      */
     public function registerInstance(string $serviceName, string $ip, int $port, string $group = 'DEFAULT_GROUP', array $metadata = [], int $weight = 1, bool $ephemeral = true)
     {
+        $this->ensureAvailable();
+
         $result = $this->request('registerInstance', [
             'serviceName' => $serviceName,
             'ip' => $ip,
@@ -328,6 +431,8 @@ class NacosGrpcClient
      */
     public function deregisterInstance(string $serviceName, string $ip, int $port, string $group = 'DEFAULT_GROUP', bool $ephemeral = true)
     {
+        $this->ensureAvailable();
+
         $result = $this->request('deregisterInstance', [
             'serviceName' => $serviceName,
             'ip' => $ip,
@@ -385,5 +490,13 @@ class NacosGrpcClient
     public function getLogger(): LoggerInterface
     {
         return $this->logger;
+    }
+
+    /**
+     * @return NacosClient|null
+     */
+    public function getHttpClient(): ?NacosClient
+    {
+        return $this->httpClient;
     }
 }

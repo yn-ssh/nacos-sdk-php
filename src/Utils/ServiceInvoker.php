@@ -5,6 +5,7 @@ namespace Nacos\Utils;
 use GuzzleHttp\Client;
 use Nacos\Discovery\DiscoveryClient;
 use Nacos\Exception\NacosException;
+use Nacos\Model\Instance;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -86,12 +87,16 @@ class ServiceInvoker
 
     /**
      * 构建服务URL
-     * @param array $instance
+     * @param array|Instance $instance
      * @param string $path
      * @return string
      */
-    public function buildUrl(array $instance, string $path = '/'): string
+    public function buildUrl($instance, string $path = '/'): string
     {
+        if ($instance instanceof Instance) {
+            return $instance->buildUrl($path);
+        }
+
         $scheme = isset($instance['metadata']['secure']) && $instance['metadata']['secure'] === 'true' 
             ? 'https' 
             : 'http';

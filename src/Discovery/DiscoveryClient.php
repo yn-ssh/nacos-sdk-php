@@ -40,19 +40,19 @@ class DiscoveryClient
         
         // 检查是否是Nacos 3.x
         if (version_compare($version, '3.0.0', '>=')) {
-            // Nacos 3.x API路径
+            // Nacos 3.x uses v2 API paths
             switch ($api) {
                 case 'instance':
-                    return '/nacos/v1/ns/instance';
+                    return '/nacos/v2/ns/instance';
                 case 'instances':
-                    return '/nacos/v1/ns/instance/list';
+                    return '/nacos/v2/ns/instance/list';
                 case 'beat':
-                    return '/nacos/v1/ns/instance/beat';
+                    return '/nacos/v2/ns/instance/beat';
                 default:
-                    return '/nacos/v1/ns/' . $api;
+                    return '/nacos/v2/ns/' . $api;
             }
         } else {
-            // Nacos 2.x API路径
+            // Nacos 2.x uses v1 API paths
             switch ($api) {
                 case 'instance':
                     return '/nacos/v1/ns/instance';
@@ -94,11 +94,22 @@ class DiscoveryClient
             'serviceName' => $serviceName,
             'ip' => $ip,
             'port' => $port,
+            'groupName' => $group,
+            'weight' => $weight,
             'ephemeral' => $ephemeral ? 'true' : 'false',
         ];
 
+        if (!empty($metadata)) {
+            $params['metadata'] = json_encode($metadata);
+        }
+
+        $namespaceId = $this->client->getNamespaceIdForApi();
+        if ($namespaceId && $namespaceId !== 'public') {
+            $params['namespaceId'] = $namespaceId;
+        }
+
         $result = $this->client->post($this->getApiPath('instance'), $params);
-        return $result === 'ok';
+        return $result === 'ok' || $result === true || (is_array($result) && ($result['code'] === 0 || $result['code'] === 200));
     }
 
     /**
@@ -127,11 +138,17 @@ class DiscoveryClient
             'serviceName' => $serviceName,
             'ip' => $ip,
             'port' => $port,
+            'groupName' => $group,
             'ephemeral' => $ephemeral ? 'true' : 'false',
         ];
 
+        $namespaceId = $this->client->getNamespaceIdForApi();
+        if ($namespaceId && $namespaceId !== 'public') {
+            $params['namespaceId'] = $namespaceId;
+        }
+
         $result = $this->client->delete($this->getApiPath('instance'), $params);
-        return $result === 'ok';
+        return $result === 'ok' || $result === true || (is_array($result) && ($result['code'] === 0 || $result['code'] === 200));
     }
 
     /**
@@ -156,7 +173,14 @@ class DiscoveryClient
 
         $params = [
             'serviceName' => $serviceName,
+            'groupName' => $group,
+            'healthyOnly' => $healthyOnly ? 'true' : 'false',
         ];
+
+        $namespaceId = $this->client->getNamespaceIdForApi();
+        if ($namespaceId && $namespaceId !== 'public') {
+            $params['namespaceId'] = $namespaceId;
+        }
 
         $result = $this->client->get($this->getApiPath('instances'), $params);
         return is_array($result) ? $result : [];
@@ -219,7 +243,7 @@ class DiscoveryClient
         ];
 
         // 获取 namespaceId 并添加到参数
-        $namespaceId = $this->client->getNamespaceId();
+        $namespaceId = $this->client->getNamespaceIdForApi();
         if ($namespaceId && $namespaceId !== 'public') {
             $params['namespaceId'] = $namespaceId;
         }
