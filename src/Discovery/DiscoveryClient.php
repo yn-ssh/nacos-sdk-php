@@ -198,7 +198,10 @@ class DiscoveryClient
         // 优先使用gRPC客户端
         if ($this->grpcClient && $this->grpcClient->isGrpcAvailable()) {
             try {
-                return $this->grpcClient->selectOneHealthyInstance($serviceName, $group);
+                $result = $this->grpcClient->selectOneHealthyInstance($serviceName, $group);
+                if ($result !== null) {
+                    return $result;
+                }
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
                 $this->client->getLogger()->warning('gRPC selectOneHealthyInstance failed, fallback to HTTP', ['exception' => $e->getMessage()]);

@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+import "google/protobuf/any.proto";
+
+option php_namespace = "Nacos\\Grpc\\Proto";
+option php_metadata_namespace = "Nacos\\Grpc\\GPBMetadata";
+
+message Metadata {
+    string type = 3;
+    string clientIp = 8;
+    map<string, string> headers = 7;
+}
+
+message Body {
+    map<string, string> value = 2;
+}
+
+message Payload {
+    Metadata metadata = 2;
+    google.protobuf.Any body = 3;
+}
+
+service Request {
+    rpc request (Payload) returns (Payload);
+    rpc requestBiStream (stream Payload) returns (stream Payload);
+}
+
+service BiRequestStream {
+    rpc requestBiStream (stream Payload) returns (stream Payload);
+}

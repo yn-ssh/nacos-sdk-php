@@ -230,15 +230,6 @@ $test('获取健康服务实例', function() use ($nacos) {
     return $hostCount >= 1 ? true : '健康实例数为0';
 });
 
-$test('选择一个健康实例', function() use ($nacos) {
-    $instance = $nacos->discovery()->selectOneHealthyInstance('test-sdk-service', 'DEFAULT_GROUP');
-    if ($instance) {
-        echo "  选中实例: {$instance['ip']}:{$instance['port']}\n";
-        return true;
-    }
-    return '未找到健康实例';
-});
-
 $test('发送心跳', function() use ($nacos) {
     $result = $nacos->discovery()->sendHeartbeat(
         'test-sdk-service',
@@ -249,6 +240,17 @@ $test('发送心跳', function() use ($nacos) {
     return $result === true ? true : '心跳返回: ' . json_encode($result);
 });
 
+$test('选择一个健康实例', function() use ($nacos) {
+    // 心跳后等待实例状态更新
+    usleep(500000);
+    $instance = $nacos->discovery()->selectOneHealthyInstance('test-sdk-service', 'DEFAULT_GROUP');
+    if ($instance) {
+        echo "  选中实例: {$instance['ip']}:{$instance['port']}\n";
+        return true;
+    }
+    return '未找到健康实例';
+});
+
 // ============================================
 // 3. 服务调用 & 缓存
 // ============================================
@@ -257,6 +259,10 @@ echo "║  3. 服务调用 & 缓存               ║\n";
 echo "╚══════════════════════════════════╝\n\n";
 
 $test('获取健康实例（ServiceInvoker）', function() use ($nacos) {
+    // 发送心跳并清除缓存，确保能获取到健康实例
+    $nacos->discovery()->sendHeartbeat('test-sdk-service', '127.0.0.1', 8080, 'DEFAULT_GROUP');
+    $nacos->invoker()->clearCache();
+    usleep(300000);
     $instance = $nacos->invoker()->getHealthyInstance('test-sdk-service', 'DEFAULT_GROUP');
     if ($instance) {
         echo "  实例: {$instance['ip']}:{$instance['port']}\n";
@@ -266,6 +272,9 @@ $test('获取健康实例（ServiceInvoker）', function() use ($nacos) {
 });
 
 $test('构建服务URL', function() use ($nacos) {
+    $nacos->discovery()->sendHeartbeat('test-sdk-service', '127.0.0.1', 8080, 'DEFAULT_GROUP');
+    $nacos->invoker()->clearCache();
+    usleep(300000);
     $instance = $nacos->invoker()->getHealthyInstance('test-sdk-service', 'DEFAULT_GROUP');
     if (!$instance) return '无可用实例';
     $url = $nacos->invoker()->buildUrl($instance, '/api/users');
