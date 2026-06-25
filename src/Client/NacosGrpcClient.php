@@ -56,6 +56,13 @@ class NacosGrpcClient
         $this->logger = $logger ?? new NullLogger();
         $this->httpClient = $httpClient;
 
+        // grpcPort=0 表示禁用 gRPC，仅使用 HTTP
+        if ($grpcPort <= 0) {
+            $this->grpcDisabled = true;
+            $this->logger->debug('[gRPC] gRPC disabled (grpcPort=0), using HTTP only');
+            return;
+        }
+
         // 自动检测 Swoole HTTP/2 客户端
         if (SwooleGrpcClient::isAvailable()) {
             $this->swooleClient = new SwooleGrpcClient(
