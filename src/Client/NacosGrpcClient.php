@@ -24,6 +24,7 @@ class NacosGrpcClient
     private ?RequestClient $grpcClient = null;
     private bool $connectionRegistered = false;
     private string $connectionId = '';
+    private bool $grpcDisabled = false;
 
     public function __construct(
         string $serverUrl,
@@ -51,6 +52,10 @@ class NacosGrpcClient
 
     public function isGrpcAvailable(): bool
     {
+        if ($this->grpcDisabled) {
+            return false;
+        }
+
         if ($this->availabilityCache !== null) {
             return $this->availabilityCache;
         }
@@ -97,6 +102,9 @@ class NacosGrpcClient
     public function resetAvailabilityCache(): void
     {
         $this->availabilityCache = null;
+        $this->grpcDisabled = false;
+        $this->connectionRegistered = false;
+        $this->connectionId = '';
     }
 
     private function ensureAvailable(): void
@@ -184,7 +192,7 @@ class NacosGrpcClient
             $payload->setMetadata($metadata);
             $payload->setBody($any);
 
-            $this->logger->info('gRPC request', ['type' => $type, 'params' => $requestData]);
+            $this->logger->debug('gRPC request', ['type' => $type, 'params' => $requestData]);
 
             $client = $this->getGrpcClient();
             $call = $client->request($payload);
@@ -217,11 +225,24 @@ class NacosGrpcClient
 
             $resultCode = $result['resultCode'] ?? $result['code'] ?? 200;
             if ($resultCode !== 200 && $resultCode !== 0) {
-                $errorMsg = $result['errorCode'] ?? $result['message'] ?? 'Unknown error';
+                $errorCode = $result['errorCode'] ?? $resultCode;
+                $errorMsg = $result['message'] ?? 'Unknown error';
+
+                // 301 = Connection is unregistered: Nacos gRPC 服务端需要双向流维持连接
+                // 一元请求无法保持连接注册，自动禁用 gRPC 并回退到 HTTP
+                if ($errorCode === 301 || $errorCode === '301') {
+                    $this->grpcDisabled = true;
+                    $this->connectionRegistered = false;
+                    $this->logger->warning(
+                        'gRPC unary requests not supported by Nacos server, disabling gRPC and using HTTP fallback. ' .
+                        'Full gRPC support requires bidirectional streaming.'
+                    );
+                }
+
                 throw new NacosException('Nacos gRPC error: ' . $errorMsg, (int)$resultCode);
             }
 
-            $this->logger->info('gRPC response', ['type' => $type, 'result' => $result]);
+            $this->logger->debug('gRPC response', ['type' => $type, 'result' => $result]);
             return $result;
         } catch (NacosException $e) {
             throw $e;

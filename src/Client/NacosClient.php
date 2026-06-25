@@ -116,22 +116,33 @@ class NacosClient
      */
     private function detectServerVersion()
     {
-        try {
-            $response = $this->httpClient->get('/nacos/v1/console/server/info');
-            $body = $response->getBody()->getContents();
-            $result = json_decode($body, true);
-            
-            if (isset($result['version'])) {
-                $this->serverVersion = $result['version'];
-                $this->logger->info('Detected Nacos server version: ' . $this->serverVersion);
-            } else {
-                $this->serverVersion = '2.0';
-                $this->logger->info('Assuming Nacos server version: 2.0');
+        $endpoints = [
+            '/nacos/v1/console/server/state',
+            '/nacos/v1/console/server/info',
+        ];
+
+        foreach ($endpoints as $endpoint) {
+            try {
+                $response = $this->httpClient->get($endpoint);
+                $body = $response->getBody()->getContents();
+                $result = json_decode($body, true);
+
+                if (isset($result['data']['version'])) {
+                    $this->serverVersion = $result['data']['version'];
+                    $this->logger->info('Detected Nacos server version: ' . $this->serverVersion);
+                    return;
+                } elseif (isset($result['version'])) {
+                    $this->serverVersion = $result['version'];
+                    $this->logger->info('Detected Nacos server version: ' . $this->serverVersion);
+                    return;
+                }
+            } catch (\Exception $e) {
+                // 继续尝试下一个端点
             }
-        } catch (\Exception $e) {
-            $this->serverVersion = '2.0';
-            $this->logger->warning('Failed to detect Nacos server version, assuming 2.0', ['exception' => $e->getMessage()]);
         }
+
+        $this->serverVersion = '2.0';
+        $this->logger->debug('Failed to detect Nacos server version, assuming 2.0');
     }
 
     /**

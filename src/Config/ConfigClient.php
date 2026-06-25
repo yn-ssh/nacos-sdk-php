@@ -93,7 +93,7 @@ class ConfigClient
                 return is_array($result) && isset($result['data']) ? $result['data'] : '';
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->warning('gRPC getConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('gRPC getConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
@@ -134,7 +134,7 @@ class ConfigClient
                 return $this->grpcClient->publishConfig($dataId, $group, $content, $type);
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->warning('gRPC publishConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('gRPC publishConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
@@ -172,7 +172,7 @@ class ConfigClient
                 return $this->grpcClient->deleteConfig($dataId, $group);
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->warning('gRPC deleteConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('gRPC deleteConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
@@ -212,7 +212,7 @@ class ConfigClient
                 return;
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->warning('gRPC listenConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('gRPC listenConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
