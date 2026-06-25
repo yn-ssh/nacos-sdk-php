@@ -83,13 +83,16 @@ class DiscoveryClient
         // 优先使用gRPC客户端
         if ($this->grpcClient && $this->grpcClient->isGrpcAvailable()) {
             try {
-                return $this->grpcClient->registerInstance($serviceName, $ip, $port, $group, $metadata, $weight, $ephemeral);
+                $result = $this->grpcClient->registerInstance($serviceName, $ip, $port, $group, $metadata, $weight, $ephemeral);
+                $this->client->getLogger()->debug('[gRPC] registerInstance succeeded', ['serviceName' => $serviceName, 'ip' => $ip, 'port' => $port]);
+                return $result;
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC registerInstance failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] registerInstance failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] registerInstance', ['serviceName' => $serviceName, 'ip' => $ip, 'port' => $port]);
         $params = [
             'serviceName' => $serviceName,
             'ip' => $ip,
@@ -127,13 +130,16 @@ class DiscoveryClient
         // 优先使用gRPC客户端
         if ($this->grpcClient && $this->grpcClient->isGrpcAvailable()) {
             try {
-                return $this->grpcClient->deregisterInstance($serviceName, $ip, $port, $group, $ephemeral);
+                $result = $this->grpcClient->deregisterInstance($serviceName, $ip, $port, $group, $ephemeral);
+                $this->client->getLogger()->debug('[gRPC] deregisterInstance succeeded', ['serviceName' => $serviceName, 'ip' => $ip, 'port' => $port]);
+                return $result;
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC deregisterInstance failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] deregisterInstance failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] deregisterInstance', ['serviceName' => $serviceName, 'ip' => $ip, 'port' => $port]);
         $params = [
             'serviceName' => $serviceName,
             'ip' => $ip,
@@ -164,13 +170,16 @@ class DiscoveryClient
         // 优先使用gRPC客户端
         if ($this->grpcClient && $this->grpcClient->isGrpcAvailable()) {
             try {
-                return $this->grpcClient->getAllInstances($serviceName, $group, $healthyOnly);
+                $result = $this->grpcClient->getAllInstances($serviceName, $group, $healthyOnly);
+                $this->client->getLogger()->debug('[gRPC] getAllInstances succeeded', ['serviceName' => $serviceName, 'group' => $group]);
+                return $result;
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC getAllInstances failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] getAllInstances failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] getAllInstances', ['serviceName' => $serviceName, 'group' => $group]);
         $params = [
             'serviceName' => $serviceName,
             'groupName' => $group,
@@ -200,14 +209,16 @@ class DiscoveryClient
             try {
                 $result = $this->grpcClient->selectOneHealthyInstance($serviceName, $group);
                 if ($result !== null) {
+                    $this->client->getLogger()->debug('[gRPC] selectOneHealthyInstance succeeded', ['serviceName' => $serviceName, 'group' => $group]);
                     return $result;
                 }
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC selectOneHealthyInstance failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] selectOneHealthyInstance failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] selectOneHealthyInstance', ['serviceName' => $serviceName, 'group' => $group]);
         $instances = $this->getAllInstances($serviceName, $group, true);
         
         if (isset($instances['hosts']) && is_array($instances['hosts']) && count($instances['hosts']) > 0) {
@@ -231,13 +242,16 @@ class DiscoveryClient
         // 优先使用gRPC客户端
         if ($this->grpcClient && $this->grpcClient->isGrpcAvailable()) {
             try {
-                return $this->grpcClient->sendHeartbeat($serviceName, $ip, $port, $group);
+                $result = $this->grpcClient->sendHeartbeat($serviceName, $ip, $port, $group);
+                $this->client->getLogger()->debug('[gRPC] sendHeartbeat succeeded', ['serviceName' => $serviceName, 'ip' => $ip, 'port' => $port]);
+                return $result;
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC sendHeartbeat failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] sendHeartbeat failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] sendHeartbeat', ['serviceName' => $serviceName, 'ip' => $ip, 'port' => $port]);
         $params = [
             'serviceName' => $serviceName,
             'ip' => $ip,

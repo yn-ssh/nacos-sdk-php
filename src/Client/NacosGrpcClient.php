@@ -73,13 +73,13 @@ class NacosGrpcClient
         }
 
         if (!extension_loaded('grpc')) {
-            $this->logger->info('gRPC extension is not installed');
+            $this->logger->info('[gRPC] gRPC extension is not installed, using HTTP fallback');
             $this->availabilityCache = false;
             return false;
         }
 
         if (!extension_loaded('protobuf')) {
-            $this->logger->info('Protobuf extension is not installed');
+            $this->logger->info('[gRPC] Protobuf extension is not installed, using HTTP fallback');
             $this->availabilityCache = false;
             return false;
         }
@@ -96,7 +96,7 @@ class NacosGrpcClient
             socket_close($socket);
 
             if (!$result) {
-                $this->logger->info('gRPC port is not reachable', ['address' => $address]);
+                $this->logger->info('[gRPC] Port is not reachable', ['address' => $address]);
                 $this->availabilityCache = false;
                 return false;
             }
@@ -104,7 +104,7 @@ class NacosGrpcClient
             $this->availabilityCache = true;
             return true;
         } catch (\Exception $e) {
-            $this->logger->warning('gRPC service is not available', ['exception' => $e->getMessage()]);
+            $this->logger->warning('[gRPC] Service is not available', ['exception' => $e->getMessage()]);
             $this->availabilityCache = false;
             return false;
         }
@@ -178,7 +178,7 @@ class NacosGrpcClient
         $checkResult = json_decode($responseAny ? $responseAny->getValue() : '{}', true);
         $this->connectionId = $checkResult['connectionId'] ?? '';
         $this->connectionRegistered = true;
-        $this->logger->debug('gRPC ServerCheck completed', ['connectionId' => $this->connectionId]);
+        $this->logger->debug('[gRPC] ServerCheck completed', ['connectionId' => $this->connectionId]);
     }
 
     private function sendGrpcRequest(string $type, array $requestData): array
@@ -206,7 +206,7 @@ class NacosGrpcClient
             $payload->setMetadata($metadata);
             $payload->setBody($any);
 
-            $this->logger->debug('gRPC request', ['type' => $type]);
+            $this->logger->debug('[gRPC] Sending request', ['type' => $type]);
 
             $client = $this->getGrpcClient();
             $call = $client->request($payload, [], ['timeout' => 10000000]);
@@ -248,21 +248,19 @@ class NacosGrpcClient
                     $this->grpcDisabled = true;
                     $this->connectionRegistered = false;
                     $this->logger->warning(
-                        'gRPC requires bidirectional streaming for connection registration, ' .
-                        'which is not supported by the current PHP gRPC extension. ' .
-                        'Disabling gRPC and using HTTP fallback.'
+                        '[gRPC->HTTP] Connection unregistered (301), disabling gRPC and using HTTP fallback'
                     );
                 }
 
                 throw new NacosException('Nacos gRPC error: ' . $errorMsg, (int)$resultCode);
             }
 
-            $this->logger->debug('gRPC response', ['type' => $type]);
+            $this->logger->debug('[gRPC] Response received', ['type' => $type]);
             return $result;
         } catch (NacosException $e) {
             throw $e;
         } catch (\Exception $e) {
-            $this->logger->error('gRPC request failed', ['exception' => $e->getMessage()]);
+            $this->logger->error('[gRPC] Request failed', ['exception' => $e->getMessage()]);
             throw new NacosException('gRPC request failed: ' . $e->getMessage());
         }
     }

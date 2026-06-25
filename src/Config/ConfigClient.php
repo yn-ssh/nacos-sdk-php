@@ -90,13 +90,15 @@ class ConfigClient
         if ($this->grpcClient && $this->grpcClient->isGrpcAvailable()) {
             try {
                 $result = $this->grpcClient->getConfig($dataId, $group);
+                $this->client->getLogger()->debug('[gRPC] getConfig succeeded', ['dataId' => $dataId, 'group' => $group]);
                 return is_array($result) && isset($result['data']) ? $result['data'] : '';
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC getConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] getConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] getConfig', ['dataId' => $dataId, 'group' => $group]);
         $params = $this->withNamespaceId([
             'dataId' => $dataId,
             'group' => $group,
@@ -131,13 +133,16 @@ class ConfigClient
         // 优先使用gRPC客户端
         if ($this->grpcClient && $this->grpcClient->isGrpcAvailable()) {
             try {
-                return $this->grpcClient->publishConfig($dataId, $group, $content, $type);
+                $result = $this->grpcClient->publishConfig($dataId, $group, $content, $type);
+                $this->client->getLogger()->debug('[gRPC] publishConfig succeeded', ['dataId' => $dataId, 'group' => $group]);
+                return $result;
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC publishConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] publishConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] publishConfig', ['dataId' => $dataId, 'group' => $group]);
         $params = $this->withNamespaceId([
             'dataId' => $dataId,
             'group' => $group,
@@ -169,13 +174,16 @@ class ConfigClient
         // 优先使用gRPC客户端
         if ($this->grpcClient && $this->grpcClient->isGrpcAvailable()) {
             try {
-                return $this->grpcClient->deleteConfig($dataId, $group);
+                $result = $this->grpcClient->deleteConfig($dataId, $group);
+                $this->client->getLogger()->debug('[gRPC] deleteConfig succeeded', ['dataId' => $dataId, 'group' => $group]);
+                return $result;
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC deleteConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] deleteConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] deleteConfig', ['dataId' => $dataId, 'group' => $group]);
         $params = $this->withNamespaceId([
             'dataId' => $dataId,
             'group' => $group,
@@ -209,13 +217,15 @@ class ConfigClient
                         'group' => $group
                     ]
                 ], $callback);
+                $this->client->getLogger()->debug('[gRPC] listenConfig succeeded', ['dataId' => $dataId, 'group' => $group]);
                 return;
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
-                $this->client->getLogger()->debug('gRPC listenConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
+                $this->client->getLogger()->debug('[gRPC->HTTP] listenConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
             }
         }
 
+        $this->client->getLogger()->debug('[HTTP] listenConfig', ['dataId' => $dataId, 'group' => $group]);
         $currentContent = $this->getConfig($dataId, $group);
         $md5 = md5($currentContent);
         $tenant = $this->client->getNamespaceIdForApi();
