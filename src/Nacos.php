@@ -18,7 +18,7 @@ class Nacos
     private $client;
 
     /**
-     * @var NacosGrpcClient
+     * @var NacosGrpcClient|null
      */
     private $grpcClient;
 
@@ -48,7 +48,7 @@ class Nacos
      * @param string $namespaceId
      * @param string $accessKey
      * @param string $secretKey
-     * @param int $grpcPort
+     * @param int $grpcPort gRPC端口，设为0则禁用gRPC仅使用HTTP
      * @param LoggerInterface|null $logger
      * @param string $username
      * @param string $password
@@ -72,7 +72,12 @@ class Nacos
             $username,
             $password
         );
-        $this->grpcClient = new NacosGrpcClient($serverUrl, $grpcPort, $namespaceId, $accessKey, $secretKey, $logger, $this->client);
+
+        // grpcPort=0 表示禁用gRPC，仅使用HTTP
+        $this->grpcClient = $grpcPort > 0
+            ? new NacosGrpcClient($serverUrl, $grpcPort, $namespaceId, $accessKey, $secretKey, $logger, $this->client)
+            : null;
+
         $this->configClient = new ConfigClient($this->client, $this->grpcClient);
         $this->discoveryClient = new DiscoveryClient($this->client, $this->grpcClient);
         $this->serviceInvoker = new ServiceInvoker($this->discoveryClient, $logger);
@@ -103,9 +108,9 @@ class Nacos
     }
 
     /**
-     * @return NacosGrpcClient
+     * @return NacosGrpcClient|null
      */
-    public function grpc(): NacosGrpcClient
+    public function grpc(): ?NacosGrpcClient
     {
         return $this->grpcClient;
     }
@@ -141,9 +146,9 @@ class Nacos
     }
 
     /**
-     * @return NacosGrpcClient
+     * @return NacosGrpcClient|null
      */
-    public function getGrpcClient(): NacosGrpcClient
+    public function getGrpcClient(): ?NacosGrpcClient
     {
         return $this->grpcClient;
     }
