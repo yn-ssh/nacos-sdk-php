@@ -3,7 +3,6 @@
 namespace Nacos\Client;
 
 use Nacos\Exception\NacosException;
-use Nacos\Grpc\Proto\Body;
 use Nacos\Grpc\Proto\Metadata;
 use Nacos\Grpc\Proto\Payload;
 use Nacos\Grpc\Proto\RequestClient;
@@ -11,6 +10,18 @@ use Google\Protobuf\Any;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
+/**
+ * Nacos gRPC 客户端
+ *
+ * 使用一元请求(unary)与 Nacos gRPC 服务通信。
+ * 由于 Nacos 服务端要求双向流(bidirectional streaming)来注册连接，
+ * 而 PHP gRPC 扩展的 BiRequestStream 无法接收服务端响应，
+ * 因此采用以下策略：
+ * 1. 首次请求尝试 gRPC 一元调用
+ * 2. 如果返回 301 (Connection is unregistered)，自动禁用 gRPC
+ * 3. 后续请求直接走 HTTP 回退，不再尝试 gRPC
+ * 4. 只产生一条 WARNING 日志，避免重复刷屏
+ */
 class NacosGrpcClient
 {
     private string $serverUrl;
@@ -20,6 +31,7 @@ class NacosGrpcClient
     private string $secretKey;
     private ?NacosClient $httpClient;
     private LoggerInterface $logger;
+
     private ?bool $availabilityCache = null;
     private ?RequestClient $grpcClient = null;
     private bool $connectionRegistered = false;
@@ -89,7 +101,6 @@ class NacosGrpcClient
                 return false;
             }
 
-            $this->logger->info('gRPC service is available', ['address' => $address]);
             $this->availabilityCache = true;
             return true;
         } catch (\Exception $e) {
@@ -132,27 +143,31 @@ class NacosGrpcClient
         return $this->grpcClient;
     }
 
+    /**
+     * 通过一元请求注册连接 (ServerCheckRequest)
+     * 注意：Nacos 服务端要求先通过 BiRequestStream 注册连接，
+     * 一元 ServerCheckRequest 可以获取 connectionId 但不会完成注册
+     */
     private function ensureConnectionRegistered(): void
     {
         if ($this->connectionRegistered) {
             return;
         }
 
-        // Nacos gRPC 需要先发送 ServerCheckRequest 注册连接
         $metadata = new Metadata();
         $metadata->setType('ServerCheckRequest');
         $metadata->setClientIp($this->getLocalIp());
         $metadata->setHeaders(['clientVersion' => 'Nacos-PHP-SDK/2.0']);
 
         $any = new Any();
-        $any->setValue('{}');
+        $any->setValue(json_encode(['requestId' => $this->generateRequestId()]));
 
         $payload = new Payload();
         $payload->setMetadata($metadata);
         $payload->setBody($any);
 
         $client = $this->getGrpcClient();
-        $call = $client->request($payload);
+        $call = $client->request($payload, [], ['timeout' => 5000000]);
         [$response, $status] = $call->wait();
 
         if ($status->code !== \Grpc\STATUS_OK) {
@@ -163,7 +178,7 @@ class NacosGrpcClient
         $checkResult = json_decode($responseAny ? $responseAny->getValue() : '{}', true);
         $this->connectionId = $checkResult['connectionId'] ?? '';
         $this->connectionRegistered = true;
-        $this->logger->info('gRPC connection registered', ['connectionId' => $this->connectionId]);
+        $this->logger->debug('gRPC ServerCheck completed', ['connectionId' => $this->connectionId]);
     }
 
     private function sendGrpcRequest(string $type, array $requestData): array
@@ -184,7 +199,6 @@ class NacosGrpcClient
             $headers = $this->buildHeaders();
             $metadata->setHeaders($headers);
 
-            // Nacos gRPC: Any.value 直接放 JSON 字符串
             $any = new Any();
             $any->setValue(json_encode($requestData));
 
@@ -192,11 +206,10 @@ class NacosGrpcClient
             $payload->setMetadata($metadata);
             $payload->setBody($any);
 
-            $this->logger->debug('gRPC request', ['type' => $type, 'params' => $requestData]);
+            $this->logger->debug('gRPC request', ['type' => $type]);
 
             $client = $this->getGrpcClient();
-            $call = $client->request($payload);
-
+            $call = $client->request($payload, [], ['timeout' => 10000000]);
             [$response, $status] = $call->wait();
 
             if ($status->code !== \Grpc\STATUS_OK) {
@@ -207,7 +220,6 @@ class NacosGrpcClient
                 throw new NacosException('gRPC response is not a Payload');
             }
 
-            // 响应: Any.value 也是原始 JSON 字符串
             $responseAny = $response->getBody();
             if ($responseAny === null) {
                 throw new NacosException('gRPC response body is null');
@@ -228,21 +240,24 @@ class NacosGrpcClient
                 $errorCode = $result['errorCode'] ?? $resultCode;
                 $errorMsg = $result['message'] ?? 'Unknown error';
 
-                // 301 = Connection is unregistered: Nacos gRPC 服务端需要双向流维持连接
-                // 一元请求无法保持连接注册，自动禁用 gRPC 并回退到 HTTP
+                // 301 = Connection is unregistered
+                // Nacos 服务端需要通过双向流(BiRequestStream)注册连接
+                // PHP gRPC 扩展目前无法正确接收双向流响应
+                // 自动禁用 gRPC 并回退到 HTTP
                 if ($errorCode === 301 || $errorCode === '301') {
                     $this->grpcDisabled = true;
                     $this->connectionRegistered = false;
                     $this->logger->warning(
-                        'gRPC unary requests not supported by Nacos server, disabling gRPC and using HTTP fallback. ' .
-                        'Full gRPC support requires bidirectional streaming.'
+                        'gRPC requires bidirectional streaming for connection registration, ' .
+                        'which is not supported by the current PHP gRPC extension. ' .
+                        'Disabling gRPC and using HTTP fallback.'
                     );
                 }
 
                 throw new NacosException('Nacos gRPC error: ' . $errorMsg, (int)$resultCode);
             }
 
-            $this->logger->debug('gRPC response', ['type' => $type, 'result' => $result]);
+            $this->logger->debug('gRPC response', ['type' => $type]);
             return $result;
         } catch (NacosException $e) {
             throw $e;
@@ -250,6 +265,18 @@ class NacosGrpcClient
             $this->logger->error('gRPC request failed', ['exception' => $e->getMessage()]);
             throw new NacosException('gRPC request failed: ' . $e->getMessage());
         }
+    }
+
+    private function generateRequestId(): string
+    {
+        return sprintf(
+            '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
     }
 
     private function getLocalIp(): string
@@ -285,6 +312,8 @@ class NacosGrpcClient
 
         return $headers;
     }
+
+    // ========== 业务接口 ==========
 
     public function getConfig(string $dataId, string $group = 'DEFAULT_GROUP'): array
     {
@@ -427,6 +456,8 @@ class NacosGrpcClient
         return ($result['resultCode'] ?? $result['code'] ?? 0) === 200
             || ($result['resultCode'] ?? $result['code'] ?? 0) === 0;
     }
+
+    // ========== Getters ==========
 
     public function getServerUrl(): string
     {

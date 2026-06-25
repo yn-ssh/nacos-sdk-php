@@ -216,6 +216,11 @@ $test('注册第二个临时实例（同服务不同端口）', function() use (
 echo "  ... 等待2秒让实例注册生效 ...\n";
 sleep(2);
 
+// 注册后发送心跳，临时实例需要心跳才能保持健康状态
+$nacos->discovery()->sendHeartbeat('test-sdk-service', '127.0.0.1', 8080, 'DEFAULT_GROUP');
+$nacos->discovery()->sendHeartbeat('test-sdk-service', '127.0.0.1', 8082, 'DEFAULT_GROUP');
+usleep(500000);
+
 $test('获取所有服务实例', function() use ($nacos) {
     $instances = $nacos->discovery()->getAllInstances('test-sdk-service', 'DEFAULT_GROUP', false);
     $hostCount = isset($instances['hosts']) ? count($instances['hosts']) : 0;
@@ -224,6 +229,10 @@ $test('获取所有服务实例', function() use ($nacos) {
 });
 
 $test('获取健康服务实例', function() use ($nacos) {
+    // 确保心跳已发送
+    $nacos->discovery()->sendHeartbeat('test-sdk-service', '127.0.0.1', 8080, 'DEFAULT_GROUP');
+    $nacos->discovery()->sendHeartbeat('test-sdk-service', '127.0.0.1', 8082, 'DEFAULT_GROUP');
+    usleep(300000);
     $instances = $nacos->discovery()->getAllInstances('test-sdk-service', 'DEFAULT_GROUP', true);
     $hostCount = isset($instances['hosts']) ? count($instances['hosts']) : 0;
     echo "  健康实例数量: {$hostCount}\n";
@@ -241,8 +250,9 @@ $test('发送心跳', function() use ($nacos) {
 });
 
 $test('选择一个健康实例', function() use ($nacos) {
-    // 心跳后等待实例状态更新
-    usleep(500000);
+    // 发送心跳确保实例健康
+    $nacos->discovery()->sendHeartbeat('test-sdk-service', '127.0.0.1', 8080, 'DEFAULT_GROUP');
+    usleep(300000);
     $instance = $nacos->discovery()->selectOneHealthyInstance('test-sdk-service', 'DEFAULT_GROUP');
     if ($instance) {
         echo "  选中实例: {$instance['ip']}:{$instance['port']}\n";
