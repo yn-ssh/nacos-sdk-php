@@ -392,7 +392,7 @@ class NacosGrpcClient
             'enabled' => true,
             'healthy' => true,
             'ephemeral' => $ephemeral,
-            'metadata' => $metadata,
+            'metadata' => empty($metadata) ? (object)[] : $metadata,
         ];
 
         $result = $this->sendGrpcRequest('InstanceRequest', [
@@ -415,6 +415,7 @@ class NacosGrpcClient
             'ip' => $ip,
             'port' => $port,
             'ephemeral' => $ephemeral,
+            'metadata' => (object)[],
         ];
 
         $result = $this->sendGrpcRequest('InstanceRequest', [
@@ -470,6 +471,7 @@ class NacosGrpcClient
             'ip' => $ip,
             'port' => $port,
             'ephemeral' => $ephemeral,
+            'metadata' => (object)[],
         ];
 
         $result = $this->sendGrpcRequest('InstanceRequest', [
