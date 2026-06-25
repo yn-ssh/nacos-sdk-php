@@ -91,7 +91,11 @@ class ConfigClient
             try {
                 $result = $this->grpcClient->getConfig($dataId, $group);
                 $this->client->getLogger()->debug('[gRPC] getConfig succeeded', ['dataId' => $dataId, 'group' => $group]);
-                return is_array($result) && isset($result['data']) ? $result['data'] : '';
+                // gRPC 响应中配置内容在 'content' 字段，兼容 'data' 字段
+                if (is_array($result)) {
+                    return $result['content'] ?? $result['data'] ?? '';
+                }
+                return '';
             } catch (NacosException $e) {
                 // gRPC失败时回退到HTTP
                 $this->client->getLogger()->debug('[gRPC->HTTP] getConfig failed, fallback to HTTP', ['exception' => $e->getMessage()]);
@@ -112,7 +116,9 @@ class ConfigClient
             // 两种情况都直接返回原始字符串
             return $result;
         } catch (NacosException $e) {
-            if (strpos($e->getMessage(), '404') !== false) {
+            $msg = $e->getMessage();
+            // HTTP 404 或 gRPC "config data not exist" 都视为配置不存在
+            if (strpos($msg, '404') !== false || stripos($msg, 'not exist') !== false) {
                 return '';
             }
             throw $e;

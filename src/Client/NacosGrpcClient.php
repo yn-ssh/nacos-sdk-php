@@ -37,6 +37,7 @@ class NacosGrpcClient
     private bool $connectionRegistered = false;
     private string $connectionId = '';
     private bool $grpcDisabled = false;
+    private ?SwooleGrpcClient $swooleClient = null;
 
     public function __construct(
         string $serverUrl,
@@ -54,6 +55,15 @@ class NacosGrpcClient
         $this->secretKey = $secretKey;
         $this->logger = $logger ?? new NullLogger();
         $this->httpClient = $httpClient;
+
+        // 自动检测 Swoole HTTP/2 客户端
+        if (SwooleGrpcClient::isAvailable()) {
+            $this->swooleClient = new SwooleGrpcClient(
+                $serverUrl, $grpcPort, $namespaceId, $accessKey, $secretKey,
+                $this->logger, $httpClient
+            );
+            $this->logger->debug('[gRPC] Swoole HTTP/2 client available, will use true bidirectional streaming');
+        }
     }
 
     public function getGrpcServerAddress(): string
@@ -66,6 +76,13 @@ class NacosGrpcClient
     {
         if ($this->grpcDisabled) {
             return false;
+        }
+
+        // Swoole HTTP/2 客户端优先（支持真双向流）
+        if ($this->swooleClient !== null) {
+            $available = $this->swooleClient->isGrpcAvailable();
+            $this->availabilityCache = $available;
+            return $available;
         }
 
         if ($this->availabilityCache !== null) {
@@ -183,6 +200,18 @@ class NacosGrpcClient
 
     private function sendGrpcRequest(string $type, array $requestData): array
     {
+        // Swoole HTTP/2 客户端委托（真双向流注册 + unary 请求）
+        if ($this->swooleClient !== null && !$this->grpcDisabled) {
+            try {
+                return $this->swooleClient->sendGrpcRequest($type, $requestData);
+            } catch (NacosException $e) {
+                if ($this->swooleClient->isConnectionDisabled()) {
+                    $this->grpcDisabled = true;
+                }
+                throw $e;
+            }
+        }
+
         $this->ensureAvailable();
 
         if ($this->httpClient !== null) {
