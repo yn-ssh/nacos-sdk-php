@@ -1,6 +1,6 @@
 # Nacos SDK for PHP
 
-适用于 Nacos 2.x / 3.x 的 PHP SDK，提供服务配置管理、服务发现、服务调用、gRPC 通信等完整能力。
+适用于 Nacos 2.x / 3.x 的 PHP SDK，提供服务配置管理、服务发现、服务调用等完整能力。
 
 ## 特性
 
@@ -8,7 +8,6 @@
 - **服务发现** — 注册 / 注销实例，获取实例列表与健康实例
 - **服务调用** — 自动发现健康实例并调用，内置缓存与重试
 - **Feign 声明式客户端** — 类 OpenFeign 的声明式 API 调用
-- **三通道通信** — Swoole HTTP/2 双向流 → gRPC → HTTP 自动降级
 - **双认证方式** — 用户名密码 (accessToken) / AK-SK 签名
 - **版本自适应** — 自动检测 Nacos 服务器版本，适配 v1 / v2 API 路径
 - **领域模型** — Instance / Config / Service 数据模型，支持序列化与反序列化
@@ -26,8 +25,7 @@ composer require ssh/nacos-sdk-php
 | PHP | >= 8.0 | |
 | guzzlehttp/guzzle | ^6.0 \|\| ^7.0 | HTTP 客户端 |
 | psr/log | ^1.0 \|\| ^2.0 \|\| ^3.0 | 日志接口 |
-| Swoole 扩展 | 可选 | 启用 HTTP/2 真双向流 gRPC（推荐） |
-| grpc + protobuf 扩展 | 可选 | 传统 gRPC 通道（Swoole 不可用时回退） |
+| symfony/options-resolver | ^5.0 \|\| ^6.0 | 参数解析 |
 
 ## 快速开始
 
@@ -41,7 +39,6 @@ $nacos = new Nacos(
     string $namespaceId = 'public',                 // 命名空间 ID
     string $accessKey   = '',                       // AK/SK 认证的 AccessKey
     string $secretKey   = '',                       // AK/SK 认证的 SecretKey
-    int    $grpcPort    = 9848,                     // gRPC 端口（设为 0 则禁用 gRPC，仅用 HTTP）
     ?LoggerInterface $logger = null,                // 日志接口（PSR-3）
     string $username    = '',                       // 用户名密码认证的用户名
     string $password    = '',                       // 用户名密码认证的密码
@@ -56,7 +53,6 @@ $nacos = new Nacos(
     'public',                 // namespaceId
     '',                       // accessKey（不使用 AK/SK 时留空）
     '',                       // secretKey
-    9848,                     // gRPC 端口
     null,                     // logger
     'nacos',                  // username
     'nacos'                   // password
@@ -70,21 +66,10 @@ $nacos = new Nacos(
     'http://localhost:8848',  // serverUrl
     'dev-namespace',          // namespaceId
     'your-access-key',        // accessKey
-    'your-secret-key'         // secretKey
-    // 其余参数使用默认值：grpcPort=9848, logger=null, username='', password=''
-);
-```
-
-#### 仅使用 HTTP（禁用 gRPC）
-
-```php
-$nacos = new Nacos(
-    'http://localhost:8848',
-    'public',
-    '', '',
-    0,           // grpcPort=0 禁用 gRPC，所有请求走 HTTP
-    null,
-    'nacos', 'nacos'
+    'your-secret-key',        // secretKey
+    null,                     // logger
+    '',                       // username
+    ''                        // password
 );
 ```
 
@@ -94,7 +79,8 @@ $nacos = new Nacos(
 $nacos = new Nacos(
     'http://localhost:8848',
     'dev-namespace',          // 非 public 的命名空间
-    '', '', 9848, null,
+    '', '',
+    null,
     'nacos', 'nacos'
 );
 ```
@@ -345,41 +331,6 @@ $productClient = $nacos->feign('product-service');
 $products = $productClient->get('/api/products');
 ```
 
-### gRPC 客户端
-
-SDK 支持两种 gRPC 通信方式，自动检测可用扩展并按优先级选择：
-
-| 优先级 | 方式 | 依赖 | 说明 |
-|--------|------|------|------|
-| 1 | Swoole HTTP/2 双向流 | Swoole 扩展 | 真双向流注册，性能最佳 |
-| 2 | PHP gRPC 扩展 | grpc + protobuf | 传统 gRPC 通道 |
-| 3 | HTTP 降级 | guzzlehttp | gRPC 不可用时自动回退 |
-
-```php
-// 检查 gRPC 可用性（grpcPort=0 时 grpc() 返回 null）
-bool $nacos->grpc()?->isGrpcAvailable();
-
-// gRPC 客户端自动共享 NacosClient 的 accessToken
-?NacosClient $nacos->grpc()?->getHttpClient();
-
-// 重置可用性缓存（强制下次重新检测）
-$nacos->grpc()?->resetAvailabilityCache();
-```
-
-**使用示例：**
-
-```php
-// 检测 gRPC 是否可用
-if ($nacos->grpc() && $nacos->grpc()->isGrpcAvailable()) {
-    echo "gRPC 可用，配置和服务操作将优先走 gRPC 通道\n";
-} else {
-    echo "gRPC 不可用，自动使用 HTTP 通道\n";
-}
-```
-
-> 无需额外代码，配置管理和服务发现操作会自动优先走 gRPC 通道。
-> 如果不需要 gRPC，初始化时传入 `grpcPort=0` 即可完全禁用。
-
 ### 领域模型
 
 ```php
@@ -459,9 +410,7 @@ $service->toArray();                      // array
 ```
 src/
 ├── Client/
-│   ├── NacosClient.php          # HTTP 客户端（认证、请求、Token 管理）
-│   ├── NacosGrpcClient.php      # gRPC 客户端（可用性检测、Token 共享）
-│   └── SwooleGrpcClient.php     # Swoole HTTP/2 双向流客户端
+│   └── NacosClient.php          # HTTP 客户端（认证、请求、Token 管理）
 ├── Config/
 │   └── ConfigClient.php         # 配置管理（发布 / 获取 / 删除 / 监听）
 ├── Discovery/
@@ -478,23 +427,6 @@ src/
 └── Nacos.php                    # 主入口
 ```
 
-## 通信策略
-
-```
-┌──────────────┐   Swoole 可用     ┌────────────────────┐
-│              │ ────────────────→ │ Swoole HTTP/2 双向流 │
-│              │                    └────────────────────┘
-│   SDK 调用    │   gRPC扩展可用   ┌────────────────────┐
-│              │ ────────────────→ │  gRPC 9848          │
-│              │                    └────────────────────┘
-│              │   均不可用         ┌────────────────────┐
-│              │ ────────────────→ │  HTTP 8848          │
-└──────────────┘                    └────────────────────┘
-```
-
-所有配置管理和服务发现操作自动遵循此策略，开发者无需手动切换。
-传入 `grpcPort=0` 可强制所有请求走 HTTP 通道。
-
 ## 认证方式
 
 | 方式 | 配置 | 适用场景 |
@@ -502,7 +434,7 @@ src/
 | 用户名密码 | 构造函数传入 `username` / `password` | 自建 Nacos 集群 |
 | AK/SK | 构造函数传入 `accessKey` / `secretKey` | 阿里云 MSE 等托管服务 |
 
-两种方式可以同时配置，SDK 会按需使用。用户名密码认证会自动登录获取 `accessToken` 并定期刷新；gRPC 客户端自动共享 HTTP 客户端的 `accessToken`。
+两种方式可以同时配置，SDK 会按需使用。用户名密码认证会自动登录获取 `accessToken` 并定期刷新。
 
 ## 注意事项
 
@@ -512,9 +444,7 @@ src/
 
 3. **持久化实例**：Nacos standalone 模式下持久化实例可能因 Raft 一致性限制返回 500 错误，这是 Nacos 服务端已知问题，集群模式不受影响。
 
-4. **gRPC 扩展**：gRPC 通道优先使用 Swoole HTTP/2 双向流（推荐），其次回退到 `grpc` + `protobuf` PHP 扩展。均未安装时自动降级为 HTTP，不影响功能使用。可通过 `grpcPort=0` 主动禁用 gRPC。
-
-5. **服务调用缓存**：`ServiceInvoker` 默认缓存健康实例 30 秒，可通过 `clearCache()` 手动清除。
+4. **服务调用缓存**：`ServiceInvoker` 默认缓存健康实例 30 秒，可通过 `clearCache()` 手动清除。
 
 ## 许可证
 

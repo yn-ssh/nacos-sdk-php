@@ -17,7 +17,6 @@ $nacos = new Nacos(
     'public',
     '',       // accessKey
     '',       // secretKey
-    9848,     // gRPC端口
     null,     // logger
     'nacos',  // username
     'nacos'   // password
@@ -401,43 +400,10 @@ $test('Service模型 - fromArray', function() {
 });
 
 // ============================================
-// 6. gRPC客户端
+// 6. 清理测试数据
 // ============================================
 echo "╔══════════════════════════════════╗\n";
-echo "║  6. gRPC客户端                     ║\n";
-echo "╚══════════════════════════════════╝\n\n";
-
-$test('gRPC可用性检测', function() use ($nacos) {
-    $available = $nacos->grpc()->isGrpcAvailable();
-    $extGrpc = extension_loaded('grpc') ? '已安装' : '未安装';
-    $extProtobuf = extension_loaded('protobuf') ? '已安装' : '未安装';
-    echo "  grpc扩展: {$extGrpc}, protobuf扩展: {$extProtobuf}\n";
-    echo "  gRPC服务: " . ($available ? '可用' : '不可用') . "\n";
-    return true; // 仅检测，不作为通过/失败
-});
-
-$test('gRPC共享accessToken', function() use ($nacos) {
-    $grpcClient = $nacos->grpc();
-    $httpClient = $grpcClient->getHttpClient();
-    if ($httpClient !== null) {
-        $token = $httpClient->getAccessToken();
-        echo "  通过httpClient获取到accessToken: " . ($token ? substr($token, 0, 16) . '...' : '无') . "\n";
-        return !empty($token) ? true : 'accessToken为空';
-    }
-    return 'httpClient未注入';
-});
-
-$test('gRPC确保token有效（ensureTokenValid）', function() use ($nacos) {
-    $nacos->getClient()->ensureTokenValid();
-    $token = $nacos->getClient()->getAccessToken();
-    return !empty($token) ? true : 'token无效';
-});
-
-// ============================================
-// 7. 清理测试数据
-// ============================================
-echo "╔══════════════════════════════════╗\n";
-echo "║  7. 清理测试数据                   ║\n";
+echo "║  6. 清理测试数据                   ║\n";
 echo "╚══════════════════════════════════╝\n\n";
 
 $test('注销临时实例(8080)', function() use ($nacos) {

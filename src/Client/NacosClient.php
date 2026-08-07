@@ -198,7 +198,7 @@ class NacosClient
     }
 
     /**
-     * 确保accessToken有效（供gRPC客户端调用）
+     * 确保accessToken有效
      * 如果token已过期或即将过期，自动刷新
      * @return void
      */
