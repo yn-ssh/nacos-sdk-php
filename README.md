@@ -405,6 +405,79 @@ $service->getProtectThreshold();          // float
 $service->toArray();                      // array
 ```
 
+## Webman 集成
+
+本 SDK 内置 Webman 插件支持，安装到 Webman 项目时自动创建配置文件。
+
+### 安装
+
+```bash
+composer require ssh/nacos-sdk-php
+```
+
+安装后自动创建 `config/plugin/nacos/` 目录，包含：
+- `process.php` — Nacos 进程配置（服务注册、心跳、配置同步）
+- `app.php` — 插件主配置
+
+### 环境变量配置（.env）
+
+```env
+# Nacos 基本配置
+NACOS_ENABLE=1
+NACOS_HOST=http://127.0.0.1:8848
+NACOS_NAMESPACE=public
+NACOS_GROUP=DEFAULT_GROUP
+NACOS_USERNAME=nacos
+NACOS_PASSWORD=nacos
+
+# 配置同步（可选，逗号分隔多个 dataId）
+NACOS_CONFIG_DATA_IDS=database,redis,application
+
+# 日志控制
+NACOS_LOG_ENABLE=1
+NACOS_SDK_LOG_ENABLE=0
+NACOS_LOG_CHANNEL=default
+```
+
+### 在控制器中使用
+
+```php
+use Nacos\Webman\NacosService;
+
+// 实时获取配置
+$content = NacosService::getConfig('app.json');
+
+// 从本地缓存读取配置（更快，由 NacosProcess 同步）
+$dbConfig = NacosService::getConfigFromCache('database');
+
+// 服务发现
+$instance = NacosService::getHealthyInstance('user-service');
+
+// Feign 调用
+$result = NacosService::get('user-service', '/api/users', ['page' => 1]);
+$result = NacosService::post('user-service', '/api/users', ['name' => 'test']);
+```
+
+### 配置就绪中间件（可选）
+
+在 `config/middleware.php` 中添加：
+
+```php
+return [
+    '' => [
+        \Nacos\Webman\NacosReadyMiddleware::class,
+    ],
+];
+```
+
+当 Nacos 配置未同步完成时返回 503，避免使用默认配置处理请求。
+
+### 手动创建配置（如自动安装未触发）
+
+```bash
+php -r "require 'vendor/autoload.php'; \Nacos\Webman\Plugin::install(null);"
+```
+
 ## 项目结构
 
 ```
@@ -422,6 +495,11 @@ src/
 ├── Utils/
 │   ├── ServiceInvoker.php       # 服务调用（发现 + 调用 + 缓存 + 重试）
 │   └── FeignClient.php          # Feign 声明式客户端
+├── Webman/
+│   ├── NacosProcess.php         # Webman 进程（注册、心跳、配置同步）
+│   ├── NacosService.php         # Webman 服务封装（静态方法）
+│   ├── NacosReadyMiddleware.php # 配置就绪中间件
+│   └── Plugin.php               # 插件自动安装
 ├── Exception/
 │   └── NacosException.php       # 异常类
 └── Nacos.php                    # 主入口
